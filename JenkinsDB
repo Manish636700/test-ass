@@ -1,0 +1,28 @@
+pipeline {
+  agent any
+  triggers { cron('H 3 * * *') } // daily at a random minute around 3AM
+  stages {
+    stage('Fetch DB creds') {
+      steps {
+        script {
+          env.DB_USER = sh(script: "aws ssm get-parameter --name '/jenkins/db_user' --with-decryption --query Parameter.Value --output text", returnStdout: true).trim()
+          env.DB_PASS = sh(script: "aws ssm get-parameter --name '/jenkins/db_pass' --with-decryption --query Parameter.Value --output text", returnStdout: true).trim()
+          env.DB_HOST = sh(script: "aws ssm get-parameter --name '/jenkins/db_host' --with-decryption --query Parameter.Value --output text", returnStdout: true).trim()
+          env.DB_NAME = sh(script: "aws ssm get-parameter --name '/jenkins/db_name' --with-decryption --query Parameter.Value --output text", returnStdout: true).trim()
+          env.BUCKET = sh(script: "aws ssm get-parameter --name '/jenkins/db_backup_bucket' --with-decryption --query Parameter.Value --output text", returnStdout: true).trim()
+        }
+      }
+    }
+    stage('Dump DB & upload') {
+      steps {
+        sh '''
+          TIMESTAMP=$(date +%F-%H%M)
+          OUT=/tmp/${DB_NAME}-${TIMESTAMP}.sql.gz
+          mysqldump -h ${DB_HOST} -u${DB_USER} -p${DB_PASS} ${DB_NAME} | gzip > ${OUT}
+          aws s3 cp ${OUT} s3://${BUCKET}/${DB_NAME}/${DB_NAME}-${TIMESTAMP}.sql.gz
+          rm -f ${OUT}
+        '''
+      }
+    }
+  }
+}

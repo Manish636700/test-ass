@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+    }
+
+    stages {
+          stage('Copy Artifacts') {
+            steps {
+                // Copy artifacts from upstream job 'porbis-assessment'
+                copyArtifacts(
+                    projectName: 'assessment',
+                    selector: lastSuccessful(), // Latest successful build
+                    filter: 'target/*.war',
+                    fingerprintArtifacts: true
+                )
+            }
+        }
+       stages {
+    stage('Fetch Secrets') {
+        steps {
+            script {
+                AWS_ACCESS_KEY_ID = sh(
+                    script: "aws ssm get-parameter --name '/jenkins/aws_access_key' --with-decryption --query Parameter.Value --output text",
+                    returnStdout: true
+                ).trim()
+
+                AWS_SECRET_ACCESS_KEY = sh(
+                    script: "aws ssm get-parameter --name '/jenkins/aws_secret_key' --with-decryption --query Parameter.Value --output text",
+                    returnStdout: true
+                ).trim()
+
+                env.DB_PASS = DB_PASS
+                env.AWS_ACCESS_KEY_ID = AWS_ACCESS_KEY_ID
+                env.AWS_SECRET_ACCESS_KEY = AWS_SECRET_ACCESS_KEY
+            }
+        }
+    }
+}
+
+
+        stage('Create EC2 Instance') {
+            when { expression { return params.DEPLOY_ENV == 'ec2' } }
+            steps {
+                script {
+                    // Launch EC2
+                    INSTANCE_ID = sh(
+                        script: """
+                            aws ec2 run-instances \
+                              --image-id ami-xxxxxxxx \
+                              --count 1 \
+                              --instance-type t2.micro \
+                              --key-name my-keypair \
+                              --security-group-ids sg-xxxxxxx \
+                              --subnet-id subnet-xxxxxxx \
+                              --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=myapp-instance}]' \
+                              --query 'Instances[0].InstanceId' \
+                              --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    
+                    echo "Launched EC2 instance: ${INSTANCE_ID}"
+
+                    // Wait until running
+                    sh "aws ec2 wait instance-running --instance-ids ${INSTANCE_ID}"
+
+                    // Fetch public DNS
+                    EC2_HOST = sh(
+                        script: "aws ec2 describe-instances --instance-ids ${INSTANCE_ID} --query 'Reservations[0].Instances[0].PublicDnsName' --output text",
+                        returnStdout: true
+                    ).trim()
+
+                    echo "EC2 Public Host: ${EC2_HOST}"
+                }
+            }
+        }
+
+        stage('Deploy to EC2') {
+            when { expression { return params.DEPLOY_ENV == 'ec2' } }
+            steps {
+                sh """
+                    scp -o StrictHostKeyChecking=no target/*.jar ec2-user@${EC2_HOST}:/opt/app/
+                    ssh -o StrictHostKeyChecking=no ec2-user@${EC2_HOST} 'nohup java -jar /opt/app/*.jar > app.log 2>&1 &'
+                """
+            }
+        }
+    }
+}
