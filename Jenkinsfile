@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    triggers {
-        githubPush()
-    }
-
     tools {
         // Make sure these names exist in Jenkins -> Manage Jenkins -> Tools
         maven "Maven-3.8.6"
@@ -18,9 +14,13 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build with Nexus') {
             steps {
-                sh 'mvn clean compile'
+                configFileProvider([configFile(fileId: 'maven-settings-nexus',variable: 'MAVEN_SETTINGS' )]){
+                    sh """
+                    mvn clean install --settings "$MAVEN_SETTINGS" 
+                    """
+                }
             }
         }
 
