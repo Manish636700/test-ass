@@ -3,7 +3,7 @@
     <mirror>
       <id>nexus</id>
       <mirrorOf>*</mirrorOf>
-      <url>http://43.205.126.158:8081/repository/maven-public/</url>
+      <url>http://65.0.95.255:8081/repository/maven-practice-hosted/</url>
     </mirror>
   </mirrors>
 
