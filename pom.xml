@@ -31,7 +31,7 @@
     <repository>
       <id>maven-practice</id>
       <name>Internal Nexus Repo </name>
-      <url>http://65.0.95.255:8081/repository/maven-practice/</url>
+      <url>http://65.0.95.255:8081/repository/maven-practice-hosted/</url>
     </repository>
   </distributionManagement>
 </project>
