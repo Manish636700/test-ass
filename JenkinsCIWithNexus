@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    tools {
+        maven "Maven-3.8.6"
+        jdk "JDK21"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Manish636700/test-ass.git'
+            }
+        }
+
+        stage('Build, Test & Package') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus-credentials', 
+                                                 usernameVariable: 'NEXUS_USER', 
+                                                 passwordVariable: 'NEXUS_PASSWORD')]) {
+                    configFileProvider([configFile(fileId: 'maven-settings-nexus', variable: 'MAVEN_SETTINGS')]) {
+                        sh '''
+                            mvn clean install --settings "$MAVEN_SETTINGS"
+                            mvn test --settings "$MAVEN_SETTINGS"
+                            mvn package -DskipTests --settings "$MAVEN_SETTINGS"
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                }
+                success {
+                    archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+                }
+            }
+        }
+
+        stage('Deploy to Nexus') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus-credentials', 
+                                                 usernameVariable: 'NEXUS_USER', 
+                                                 passwordVariable: 'NEXUS_PASSWORD')]) {
+                    configFileProvider([configFile(fileId: 'maven-settings-nexus', variable: 'MAVEN_SETTINGS')]) {
+                        sh '''
+                            mvn deploy -DskipTests --settings "$MAVEN_SETTINGS"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Build, Test, Package, and Deploy Successful. Artifact Archived."
+        }
+        failure {
+            echo "Pipeline failed. Check logs for details."
+        }
+    }
+}
